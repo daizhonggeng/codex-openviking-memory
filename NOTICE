@@ -1,0 +1,30 @@
+Codex OpenViking Memory
+License: AGPL-3.0-only
+
+This distribution includes a limited, unchanged source subset from OpenViking:
+  Upstream project: OpenViking
+  Source repository: https://github.com/volcengine/OpenViking
+  Upstream release/tag: v0.5.1.1
+  Pinned Git tree: c2dea8005f851ce064223b78c2c7d5634807b9fb
+  Included directory: vendor/OpenViking-v0.5.1.1/
+  Original authors: the OpenViking contributors; retain upstream file notices
+  Upstream license: GNU Affero General Public License, version 3
+
+The upstream LICENSE is reproduced unchanged both at the repository root and
+inside the vendor directory. The bridge and its distribution are licensed as
+AGPL-3.0-only. The vendor README and SHA256SUMS identify the exact included files.
+This attribution does not imply endorsement by the upstream project.
+
+Upstream metadata discrepancy: the pinned example's .codex-plugin/plugin.json
+declares "license": "Apache-2.0", while the pinned repository root LICENSE is
+GNU AGPL v3. Both original declarations are retained unchanged. This project
+does not rely on that metadata as a grant to distribute the integration under
+permissive terms; its chosen distribution license remains AGPL-3.0-only.
+
+The local source subset contains 30 upstream files (including LICENSE). This is
+not a complete OpenViking server distribution. Wrapper, approval, installer and
+read-only MCP code outside the vendor directory are this project's integration.
+
+When redistributing this work or providing a modified version over a network,
+comply with the full license, including applicable Corresponding Source and
+network source-offer obligations. The complete license text governs.

@@ -1,0 +1,17 @@
+{
+  "name": "codex-openviking-memory",
+  "version": "0.1.0",
+  "description": "Human-confirmed memory for Codex and OpenViking: local candidates, explicit approval, selected summaries only.",
+  "type": "module",
+  "private": true,
+  "license": "AGPL-3.0-only",
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "test": "node --test tests/*.test.mjs",
+    "check": "node scripts/check-source.mjs",
+    "verify:vendor": "node scripts/check-vendor.mjs"
+  },
+  "repository": { "type": "git", "url": "https://github.com/daizhonggeng/codex-openviking-memory.git" },
+  "bugs": { "url": "https://github.com/daizhonggeng/codex-openviking-memory/issues" },
+  "keywords": ["codex", "openviking", "memory", "human-in-the-loop", "mcp"]
+}
