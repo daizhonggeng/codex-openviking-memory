@@ -1,0 +1,4 @@
+* text=auto eol=lf
+
+# Pinned upstream bytes are verified against their source checksums.
+vendor/OpenViking-v0.5.1.1/** -text -eol
