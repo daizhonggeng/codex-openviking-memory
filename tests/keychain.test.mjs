@@ -55,6 +55,11 @@ function parseSecurityInput(input) {
   return values;
 }
 
+async function nativeStep(label, operation) {
+  try { return await operation(); }
+  catch { throw Error('Native Keychain test failed at step: ' + label); }
+}
+
 test('Keychain service identity is deterministic, private and scoped to an absolute data directory', () => {
   assert.equal(keychainService(testRoot), service);
   assert.match(service, /^com\.codex-openviking-memory\.[a-f0-9]{32}$/);
@@ -74,14 +79,15 @@ test('Keychain reads use native argv containing only identifiers, and remove onl
   assert.deepEqual(calls[0].options.stdio, ['pipe', 'pipe', 'pipe']);
 });
 
-test('Keychain secret writes travel only through safely escaped stdin, never argv, env or files', async () => {
+test('Keychain writes preserve native ACLs and use safely escaped stdin, never secret argv, env or files', async () => {
   const {client, calls} = mockNative();
   const value = 'synthetic!"\\\'$()`;|&<>=';
   await client.writeKeychainSecret({...target, value});
   assert.deepEqual(calls[0].args, ['-i']);
   assert.ok(!JSON.stringify(calls[0].args).includes(value));
   assert.ok(!JSON.stringify(calls[0].options).includes(value));
-  assert.deepEqual(parseSecurityInput(calls[0].input), ['add-generic-password', '-U', '-s', service, '-a', 'api-key', '-w', value, '-T', '/usr/bin/security', target.keychainPath]);
+  // -T on an existing -U item invokes Apple's prompting ACL-replacement path.
+  assert.deepEqual(parseSecurityInput(calls[0].input), ['add-generic-password', '-U', '-s', service, '-a', 'api-key', '-w', value, target.keychainPath]);
   assert.equal(calls[0].input.split('\n').length, 2);
   for (const name of ['OVCM_API_KEY', 'OVCM_VAULT_KEY', 'NODE_OPTIONS', 'OPENVIKING_API_KEY']) assert.equal(calls[0].options.env[name], undefined);
 });
@@ -140,35 +146,39 @@ test('missing or invalid native credentials fail with bounded local validation e
   await assert.rejects(invalid({dataDir: testRoot}), error => !error.message.includes('synthetic'));
 });
 
+test('native acceptance diagnostics identify only the fixed step and never native error text', async () => {
+  await assert.rejects(nativeStep('update existing API item', async () => { throw Error('RAW-SENSITIVE-NATIVE-FAILURE'); }), error => error.message === 'Native Keychain test failed at step: update existing API item' && error.cause === undefined);
+});
+
 test('native macOS isolated Keychain roundtrip and runtime credential loading', {skip: process.platform !== 'darwin' ? 'Native /usr/bin/security test runs in macOS CI' : false}, async t => {
   const root = await mkdtemp(join(tmpdir(), 'ovcm-native-keychain-'));
   const keychainPath = join(root, 'isolated.keychain-db');
   const execute = promisify(execFile);
   // The keychain password is a synthetic test value, never a user credential.
   const password = randomBytes(24).toString('hex');
-  await execute('/usr/bin/security', ['create-keychain', '-p', password, keychainPath]);
+  await nativeStep('create isolated keychain', () => execute('/usr/bin/security', ['create-keychain', '-p', password, keychainPath], {timeout: 15000, maxBuffer: 16384}));
   t.after(async () => {
     await execute('/usr/bin/security', ['delete-keychain', keychainPath]).catch(() => {});
     await rm(root, {recursive: true, force: true});
   });
-  await execute('/usr/bin/security', ['unlock-keychain', '-p', password, keychainPath]);
+  await nativeStep('unlock isolated keychain', () => execute('/usr/bin/security', ['unlock-keychain', '-p', password, keychainPath], {timeout: 15000, maxBuffer: 16384}));
   const nativeTarget = {service: keychainService(root), account: 'api-key', keychainPath};
   const apiKey = 'synthetic-api!"\\\'$()`;|&<>=';
   const vaultKey = randomBytes(32).toString('base64');
-  assert.equal(await readKeychainSecret(nativeTarget), null);
-  await writeKeychainSecret({...nativeTarget, value: apiKey});
-  await writeKeychainSecret({...nativeTarget, account: 'vault-key', value: vaultKey});
-  assert.equal(await readKeychainSecret(nativeTarget), apiKey);
-  assert.equal(await readKeychainSecret({...nativeTarget, account: 'vault-key'}), vaultKey);
+  await nativeStep('read absent API item', async () => assert.equal(await readKeychainSecret(nativeTarget), null));
+  await nativeStep('create API item with punctuation', () => writeKeychainSecret({...nativeTarget, value: apiKey}));
+  await nativeStep('create vault item', () => writeKeychainSecret({...nativeTarget, account: 'vault-key', value: vaultKey}));
+  await nativeStep('read API item with punctuation', async () => assert.equal(await readKeychainSecret(nativeTarget), apiKey));
+  await nativeStep('read vault item', async () => assert.equal(await readKeychainSecret({...nativeTarget, account: 'vault-key'}), vaultKey));
   const saved = Object.fromEntries(['OVCM_KEYCHAIN_PATH', 'OVCM_API_KEY', 'OVCM_VAULT_KEY'].map(name => [name, process.env[name]]));
   t.after(() => { for (const [name, value] of Object.entries(saved)) { if (value === undefined) delete process.env[name]; else process.env[name] = value; } });
   process.env.OVCM_KEYCHAIN_PATH = keychainPath;
   delete process.env.OVCM_API_KEY;
   delete process.env.OVCM_VAULT_KEY;
-  assert.deepEqual(await loadCredentials({dataDir: root}), {apiKey, vaultKey});
-  await writeKeychainSecret({...nativeTarget, value: 'synthetic-updated-key'});
-  assert.equal(await readKeychainSecret(nativeTarget), 'synthetic-updated-key');
-  assert.equal(await deleteKeychainSecret(nativeTarget), true);
-  assert.equal(await readKeychainSecret(nativeTarget), null);
-  assert.equal(await deleteKeychainSecret({...nativeTarget, account: 'vault-key'}), true);
+  await nativeStep('load runtime credentials from Keychain', async () => assert.deepEqual(await loadCredentials({dataDir: root}), {apiKey, vaultKey}));
+  await nativeStep('update existing API item', () => writeKeychainSecret({...nativeTarget, value: 'synthetic-updated-key'}));
+  await nativeStep('read updated API item', async () => assert.equal(await readKeychainSecret(nativeTarget), 'synthetic-updated-key'));
+  await nativeStep('delete isolated API item', async () => assert.equal(await deleteKeychainSecret(nativeTarget), true));
+  await nativeStep('read deleted API item', async () => assert.equal(await readKeychainSecret(nativeTarget), null));
+  await nativeStep('delete isolated vault item', async () => assert.equal(await deleteKeychainSecret({...nativeTarget, account: 'vault-key'}), true));
 });
