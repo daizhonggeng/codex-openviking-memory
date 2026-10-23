@@ -11,6 +11,7 @@ The model performs semantic review; hooks enforce a small authorization protocol
 | `Stop` | Submit only selected summaries after readiness and identity checks | Successful extraction/indexing |
 | `status` | Report known local status and remote task metadata | That every intended memory is searchable |
 | Read-only MCP | Scoped queries and readback | Authority to write or read another user's data |
+| Local knowledge template | Provide blank record/navigation structure and path mapping | Personal facts, remote resources, or permission to upload |
 
 ## Data flow
 
@@ -30,7 +31,13 @@ Candidate `source` must be `current-human-statement`. This label is necessary in
 
 Plain confirmation is exact `save candidate ID` or `保存候选 ID`. The hook also recognizes its specifically supported question/reply envelope. Arbitrary JSON or quoted command text is not a substitute. Expired, missing, or already submitted candidates cannot be approved for a new capture. A candidate ID should be treated as sensitive local metadata, not as a shareable credential.
 
-Hook invocation is a trusted local client boundary. A process that can run as the same OS user and alter the vault, runtime, configuration, or hook input is outside the protection this protocol provides. DPAPI and encryption reduce accidental disclosure; they do not isolate the bridge from malware running as that user.
+Hook invocation is a trusted local client boundary. A process that can run as the same OS user and alter the vault, runtime, configuration, or hook input is outside the protection this protocol provides. Native Keychain/DPAPI storage and encryption reduce accidental disclosure; they do not isolate the bridge from malware running as that user.
+
+## Local directory and remote knowledge
+
+The template retains the generic personal-context organization: three core Markdown files plus numbered topic folders and blank record templates. Installation creates this local structure at derived `knowledgeDir`; it does not load a previous personal archive or treat placeholders and directory names as facts. A v0.1 configuration remains valid because the raw schema does not change.
+
+`template map` expresses a path convention from local relative paths to the configured `resourceRoot`. It is descriptive metadata, not synchronization or proof of remote existence. Confirmed short summaries follow the existing candidate/approval flow into the separate native `memoryRoot`. Neither candidate kind guidance nor template initialization writes the core Markdown files automatically. See [directory template and mapping](template.md).
 
 ## Restricted official capture
 

@@ -10,9 +10,17 @@ Run `node bin/cli.mjs --help` from the checkout, or replace the script path with
 | `doctor --config PATH` | Authenticate, verify exact ordinary identity/read scope, and establish local readiness on success |
 | `status --config PATH --id ID` | Report local status and known remote task metadata without printing the candidate summary |
 | `mcp --config PATH` | Start the read-only JSON-RPC stdio MCP server |
+| `template init --config PATH [--directory PATH]` | Create missing local template files; preserve existing files; return created/skipped paths |
+| `template map --config PATH [--directory PATH]` | Describe local template paths and their remote resource URI convention |
 | `--help` | Display CLI usage |
 
 The hook commands are client integration entry points invoked by the trusted host runtime. The assistant must never self-invoke either hook to create confirmation or trigger submission. Do not forge hook events to bypass a human choice. The `mcp` command speaks a protocol over stdio; it is not an interactive chat prompt.
+
+## Directory template
+
+`template init` and `template map` require valid configuration but no API/vault credentials and no network. Their default directory is derived as `dataDir/knowledge`; `--directory` selects an explicit local destination. Initializing again fills missing template files and skips existing ones, including edited core files. It does not overwrite, import, upload, or initialize Git persistence. Initialization refuses unsafe paths and symlinks rather than following them.
+
+`template map` returns JSON describing the template version, local root, configured resource and native-memory roots, core-file mapping, and topic-directory mapping. The result is a navigation convention; it does not query or create corresponding remote objects. See [the full template guide](template.md).
 
 ## Candidate input
 

@@ -18,6 +18,9 @@ state/
 logs/
 backups/
 *.dpapi
+*.keychain
+*.keychain-db
+knowledge/
 *.pem
 *.key
 candidate.json

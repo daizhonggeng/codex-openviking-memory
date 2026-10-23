@@ -32,8 +32,8 @@ function isolatedEnvironment(extra = {}) {
 function createFixture(t) {
   const temporaryRoot = createTemporaryRoot(t);
   const sourceRoot = path.join(temporaryRoot, 'source with spaces');
-  const dataDir = path.join(temporaryRoot, 'data with spaces');
-  for (const relative of ['scripts', 'bin', 'lib', 'vendor/upstream', 'secrets', 'tests']) {
+  const dataDir = path.join(temporaryRoot, 'data with spaces %OVCM_INSTALLER_LITERAL%');
+  for (const relative of ['scripts', 'bin', 'lib', 'vendor/upstream', 'templates/personal-context', 'secrets', 'tests']) {
     mkdirSync(path.join(sourceRoot, relative), { recursive: true });
   }
   copyFileSync(installerSource, path.join(sourceRoot, 'scripts', 'install.ps1'));
@@ -49,6 +49,7 @@ import { writeFileSync } from 'node:fs';
 const config = process.argv[process.argv.indexOf('--config') + 1];
 if (process.argv[2] === 'doctor') throw new Error('Offline installer must not invoke doctor');
 if (process.argv[2] === 'hook') process.stdout.write(JSON.stringify({ event: process.argv[3], config }));
+if (process.argv[2] === 'template') process.stdout.write(JSON.stringify({ created: [], skipped: [], destination: 'fixture-knowledge' }));
 `);
   return { temporaryRoot, sourceRoot, dataDir, installer: path.join(sourceRoot, 'scripts', 'install.ps1') };
 }
@@ -106,10 +107,11 @@ test('Windows offline installer handles spaces, encrypts a fresh vault key, and 
   assert.deepEqual(Object.keys(hooks), ['UserPromptSubmit', 'Stop']);
   for (const event of Object.keys(hooks)) {
     const command = hooks[event][0].hooks[0].command;
-    assert.match(command, /^"[A-Za-z]:\\.*node\.exe" ".*cli\.mjs" hook /);
-    assert.ok(command.endsWith(`--config "${configPath}"`));
-    // Execute via cmd.exe, the Windows command shell used for quoted hook commands.
-    const invoked = spawnSync(command, { shell: true, encoding: 'utf8', timeout: 10_000, windowsHide: true });
+    assert.match(command, /^pwsh\.exe -NoLogo -NoProfile -NonInteractive -EncodedCommand [A-Za-z0-9+/=]+$/);
+    const decoded=Buffer.from(command.split(' ').at(-1),'base64').toString('utf16le');
+    assert.ok(decoded.includes(`--config '${configPath.replaceAll("'","''")}'`));
+    // A same-named environment variable must not expand inside the literal data path.
+    const invoked = spawnSync(command, { shell: true, encoding: 'utf8', input:'{"fixture":"中文输入"}', timeout: 10_000, windowsHide: true, env:isolatedEnvironment({OVCM_INSTALLER_LITERAL:'UNEXPECTED-EXPANSION'}) });
     assertSucceeded(invoked);
     assert.deepEqual(JSON.parse(invoked.stdout), { event, config: configPath });
   }
@@ -181,10 +183,29 @@ test('Windows installer rejects unsafe endpoints and in-repository state before 
   assert.equal(existsSync(path.join(fixture.sourceRoot, 'state')), false);
 });
 
+test('Windows reinstall accepts an existing schema1 config with its optional writeUrl omitted',windowsOnly,t=>{
+  const fixture=createFixture(t);assertSucceeded(runInstaller(fixture));
+  const configPath=path.join(fixture.dataDir,'config.json');
+  const config=JSON.parse(readFileSync(configPath,'utf8'));delete config.writeUrl;
+  const preserved=JSON.stringify(config,null,2)+'\n';writeFileSync(configPath,preserved);
+  const vaultPath=path.join(fixture.dataDir,'secrets','vault-key.dpapi');
+  const vaultBefore=readFileSync(vaultPath,'utf8');
+  assertSucceeded(runInstaller(fixture));
+  assert.equal(readFileSync(configPath,'utf8'),preserved);
+  assert.equal(readFileSync(vaultPath,'utf8'),vaultBefore);
+});
+
 test('Windows actual runtime install runs the generated PowerShell propose command with its DPAPI vault', windowsOnly, (t) => {
   const temporaryRoot = createTemporaryRoot(t);
   const dataDir = path.join(temporaryRoot, "actual runtime data with spaces and 'quote'");
   assertSucceeded(runInstaller({ installer: installerSource, dataDir }));
+  for (const name of ['PROFILE.md','PREFERENCES.md','CURRENT.md','90-模板/通用记录.md','99-归档/README.md']) {
+    assert.equal(existsSync(path.join(dataDir,'knowledge',name)),true);
+  }
+  const preservedProfile=path.join(dataDir,'knowledge','PROFILE.md');
+  writeFileSync(preservedProfile,'Synthetic user-edited template; preserve this file.\n');
+  assertSucceeded(runInstaller({ installer: installerSource, dataDir }));
+  assert.equal(readFileSync(preservedProfile,'utf8'),'Synthetic user-edited template; preserve this file.\n');
   const inputPath = path.join(temporaryRoot, "synthetic candidate's input.json");
   const summary = 'Synthetic offline installer smoke-test candidate; this is not a personal fact.';
   writeFileSync(inputPath, JSON.stringify({ summary, kind: 'knowledge', source: 'current-human-statement' }));

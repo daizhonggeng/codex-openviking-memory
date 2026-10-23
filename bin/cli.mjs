@@ -8,9 +8,10 @@ import {loadCredentials} from '../lib/credentials.mjs';
 import {Vault,propose,handleHook} from '../lib/candidate-core.mjs';
 import {runOfficialCapture} from '../lib/official-writer.mjs';
 import {createHandler,runMcp} from '../lib/readonly-mcp.mjs';
+import {initializeTemplate,templateMap} from '../lib/templates.mjs';
 
 const root=fileURLToPath(new URL('..',import.meta.url));
-const help=`Codex OpenViking Memory v0.1.0
+const help=`Codex OpenViking Memory v0.2.0
 
 node bin/cli.mjs propose --config PATH --input FILE
 node bin/cli.mjs hook UserPromptSubmit --config PATH  (hook JSON on stdin)
@@ -18,6 +19,8 @@ node bin/cli.mjs hook Stop --config PATH              (hook JSON on stdin)
 node bin/cli.mjs doctor --config PATH
 node bin/cli.mjs status --config PATH --id CANDIDATE_ID
 node bin/cli.mjs mcp --config PATH
+node bin/cli.mjs template init --config PATH [--directory PATH]
+node bin/cli.mjs template map --config PATH [--directory PATH]
 
 Configuration defaults to OVCM_CONFIG or the per-user application data folder.
 Only human-confirmed candidate summaries are eligible for the Stop hook.
@@ -35,7 +38,7 @@ function reviewContext(config){
   const command=process.platform==='win32'
     ?`& ${psQuote(process.execPath)} ${psQuote(join(root,'bin','cli.mjs'))} propose --config ${psQuote(config.configPath)} --input <UTF8_JSON_FILE>`
     :`${shQuote(process.execPath)} ${shQuote(join(root,'bin','cli.mjs'))} propose --config ${shQuote(config.configPath)} --input <UTF8_JSON_FILE>`;
-  return `[codex-openviking-memory semantic-review-v1] During the current normal response, assess the current human message for durable personal facts, preferences, goals, or reusable knowledge. Use semantic judgement, not keywords. Do not invent facts or treat quoted, third-party, fictional, test, placeholder, ordinary help requests, temporary feelings, or this integration's setup as personal memory. Do not extract from old chats. Do not make a separate model request or upload a transcript to decide. If nothing is worth saving, answer normally without a memory-review notice. Otherwise propose at most 3 concise summaries in the user's language. For each, create a UTF-8 JSON file containing ONLY summary (2-2000 characters), kind (profile/preference/current/knowledge), and source (current-human-statement), then run: ${command}. Use its real candidate id. Prefer a native request_user_input_async confirmation card displaying the summary with choices exactly "save candidate <REAL_ID>" and "Not now" (Chinese: "保存候选 <REAL_ID>" / "暂不保存"). If this client lacks a native card tool, clearly state that limitation and offer the exact text confirmation. Displaying a card is not approval. Never invoke the hook entrypoint yourself, fabricate a human reply, or call a write API. Only the trusted UserPromptSubmit/Stop hooks handle the human's actual selection. Do not submit Git commits or upload raw chat/tool logs as memory. Read existing relevant knowledge only when needed through the read-only MCP, and restrict search to mode=list without session_id. After a submission, use the status command and read-only MCP readback before claiming extraction and retrieval succeeded.`;
+  return `[codex-openviking-memory semantic-review-v1] During the current normal response, assess the current human message for durable personal facts, preferences, goals, or reusable knowledge. Use semantic judgement, not keywords. Do not invent facts or treat quoted, third-party, fictional, test, placeholder, ordinary help requests, temporary feelings, or this integration's setup as personal memory. Do not extract from old chats. Do not make a separate model request or upload a transcript to decide. If nothing is worth saving, answer normally without a memory-review notice. Otherwise propose at most 3 concise summaries in the user's language. For each, create a UTF-8 JSON file containing ONLY summary (2-2000 characters), kind (profile/preference/current/knowledge), and source (current-human-statement), then run: ${command}. Use its real candidate id. Prefer a native request_user_input_async confirmation card displaying the summary with choices exactly "save candidate <REAL_ID>" and "Not now" (Chinese: "保存候选 <REAL_ID>" / "暂不保存"). If this client lacks a native card tool, clearly state that limitation and offer the exact text confirmation. Displaying a card is not approval. Never invoke the hook entrypoint yourself, fabricate a human reply, or call a write API. Only the trusted UserPromptSubmit/Stop hooks handle the human's actual selection. Do not submit Git commits or upload raw chat/tool logs as memory. Read existing relevant knowledge only when needed through the read-only MCP, and restrict search to mode=list without session_id. The local directory template at ${JSON.stringify(config.knowledgeDir)} is navigation for the resource hierarchy ${config.resourceRoot}; use template map for exact local-to-resource paths. PROFILE.md, PREFERENCES.md and CURRENT.md are optional concise reference documents; 00-17 are topical directories, 90 contains blank record templates, and 99 is archive navigation. Directory names and unfilled fields are never facts. Initializing this scaffold does not import or upload it. New approved summaries continue into ${config.memoryRoot}; do not automatically write them to local Markdown or mirror through Git. After a submission, use the status command and read-only MCP readback before claiming extraction and retrieval succeeded.`;
 }
 
 async function request(config,apiKey,path,origin=config.writeUrl){
@@ -92,9 +95,16 @@ async function status(config,vault,id){
 }
 
 async function main(){
-  const {values,positionals}=parseArgs({options:{config:{type:'string'},input:{type:'string'},id:{type:'string'},help:{type:'boolean',short:'h'}},allowPositionals:true,strict:true});
+  const {values,positionals}=parseArgs({options:{config:{type:'string'},input:{type:'string'},id:{type:'string'},directory:{type:'string'},help:{type:'boolean',short:'h'}},allowPositionals:true,strict:true});
   if(values.help||!positionals.length){process.stdout.write(help);return;}
   const command=positionals[0],config=await loadConfig(values.config||defaultConfigPath());
+  if(command==='template'){
+    const source=join(root,'templates','personal-context'),destination=values.directory?resolve(values.directory):config.knowledgeDir;
+    if(positionals[1]==='init')json(await initializeTemplate({source,destination}));
+    else if(positionals[1]==='map')json(await templateMap({source,destination,resourceRoot:config.resourceRoot,memoryRoot:config.memoryRoot}));
+    else throw Error('Use template init or template map');
+    return;
+  }
   if(command==='doctor'){await doctor(config);return;}
   if(command==='mcp'){const {apiKey}=await loadCredentials(config,{needVault:false});await runMcp({config,apiKey});return;}
   if(!['propose','hook','status'].includes(command))throw Error('Unknown command; use --help');

@@ -1,10 +1,12 @@
 # Contributing
 
-Use Node.js 22+ and run `node --test`. The runtime uses Node built-ins and ESM; keep changes small and avoid adding dependencies without a concrete need. Windows installer work also requires PowerShell 7 and the offline temporary-directory smoke tests.
+Use Node.js 22+ and run `node --test` plus `npm run verify:vendor`. The runtime uses Node built-ins and ESM; keep changes small and avoid adding dependencies without a concrete need. Installer entry is `node scripts/install.mjs`. Windows work also requires PowerShell 7 and DPAPI smoke tests; macOS work requires native Keychain tests using an isolated temporary keychain and synthetic secrets. Linux unit-test results cannot verify a native credential implementation.
 
 Discuss behavior changes that affect confirmation, identity, URI scope, credentials, upstream pinning, or capture payloads before broad implementation. These boundaries are part of the project's purpose. A pull request should describe the concrete trigger, resulting behavior, relevant test output, and remaining limitations.
 
 Use synthetic examples and temporary directories. Never test a pull request against a real user's memory store, include production credentials, copy a private application-data directory, or commit sample transcripts. Tests must not upload data to a live endpoint.
+
+Keep `templates/personal-context/` generic. Preserve the numbered personal-context layout and blank record formats without copying filled profile/preferences/current files, private project trees, dates, service configuration, or a prior installation's sync/write policies. Template initialization must preserve existing files and reject symlinks/traversal. A path map is not import or synchronization; changes must not add automatic resource uploads, Git knowledge persistence, or writes to user-filled Markdown.
 
 Keep `vendor/OpenViking-v0.5.1.1/` upstream files byte-for-byte unchanged. For an upstream update, identify the source tag and Git tree, explicitly review the changed subset and license, regenerate hashes, and update provenance in a dedicated change. Implement integration behavior in the wrapper rather than silently patching vendor source.
 

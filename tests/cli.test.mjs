@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {createServer} from 'node:http';
 import {spawn} from 'node:child_process';
-import {mkdtemp,writeFile,readFile,rm,readdir} from 'node:fs/promises';
+import {mkdtemp,writeFile,readFile,rm,readdir,realpath,access} from 'node:fs/promises';
 import {tmpdir} from 'node:os';
 import {join,resolve,sep} from 'node:path';
 import {fileURLToPath} from 'node:url';
@@ -10,7 +10,8 @@ import {randomBytes} from 'node:crypto';
 
 const cli=fileURLToPath(new URL('../bin/cli.mjs',import.meta.url));
 async function fixture(t,{configName='config.json'}={}){
-  const directory=await mkdtemp(join(tmpdir(),'ovcm-cli-'));
+  const temporaryBase=await realpath(tmpdir());
+  const directory=await mkdtemp(join(temporaryBase,'ovcm-cli-'));
   const state={messages:[],commits:0,requests:[],malformedHealth:false};
   const health={status:'ok',healthy:true,account_id:'test-account',user_id:'test-user',role:'user'};
   const server=createServer(async(req,res)=>{
@@ -48,7 +49,7 @@ async function fixture(t,{configName='config.json'}={}){
   await new Promise(resolveListen=>server.listen(0,'127.0.0.1',resolveListen));
   t.after(async()=>{
     server.closeAllConnections();await new Promise(resolveClose=>server.close(resolveClose));
-    assert.ok(resolve(directory).startsWith(resolve(tmpdir())+sep));
+    assert.ok(resolve(directory).startsWith(resolve(temporaryBase)+sep));
     await rm(directory,{recursive:true,force:true});
   });
   const origin=`http://127.0.0.1:${server.address().port}`;
@@ -112,4 +113,25 @@ test('review instructions quote configured paths safely for the current shell',a
   const context=JSON.parse(result.stdout).hookSpecificOutput.additionalContext;
   const expected=process.platform==='win32'?"'"+configPath.replaceAll("'","''")+"'":"'"+configPath.replaceAll("'","'\"'\"'")+"'";
   assert.ok(context.includes('--config '+expected));assert.equal(state.requests.length,0);
+});
+
+test('template commands map the existing hierarchy and preserve files without credentials or network access',async t=>{
+  const {run,configPath,directory,state}=await fixture(t);
+  const withoutCredentials={OVCM_API_KEY:'',OVCM_VAULT_KEY:''};
+  const originalConfig=await readFile(configPath,'utf8');
+  const mapped=await run(['template','map'],'',withoutCredentials);assert.equal(mapped.code,0,mapped.stderr);
+  const mapping=JSON.parse(mapped.stdout);
+  assert.equal(mapping.coreFiles.profile.resourceUri,'viking://user/test-user/resources/personal-context/PROFILE.md');
+  assert.equal(mapping.memoryRoot,'viking://user/test-user/memories/');
+  await assert.rejects(access(join(directory,'knowledge')));
+  const initialized=await run(['template','init'],'',withoutCredentials);assert.equal(initialized.code,0,initialized.stderr);
+  assert.ok(JSON.parse(initialized.stdout).created.includes('PROFILE.md'));
+  const profile=join(directory,'knowledge','PROFILE.md');
+  const custom='Synthetic user-edited content retained during template upgrade.\n';
+  await writeFile(profile,custom);
+  const second=await run(['template','init'],'',withoutCredentials);assert.equal(second.code,0,second.stderr);
+  assert.ok(JSON.parse(second.stdout).skipped.includes('PROFILE.md'));
+  assert.equal(await readFile(profile,'utf8'),custom);
+  assert.equal(await readFile(configPath,'utf8'),originalConfig);
+  assert.equal(state.requests.length,0);
 });

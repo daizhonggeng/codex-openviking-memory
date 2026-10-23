@@ -1,6 +1,6 @@
 {
   "name": "codex-openviking-memory",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Human-confirmed memory for Codex and OpenViking: local candidates, explicit approval, selected summaries only.",
   "type": "module",
   "private": true,
